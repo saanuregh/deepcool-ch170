@@ -1,0 +1,23 @@
+[package]
+name = "deepcool-ch170"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tracing = "0.1"
+tracing-subscriber = "0.3"
+anyhow = "1.0"
+winapi = { version = "0.3", features = [
+    "memoryapi",
+] }
+fixedstr = "0.5"
+hidapi = { version = "2.6", default-features = false, features = [
+    "windows-native",
+] }
+bincode = "2"
+zerocopy = { version = "0.8", features = ["derive", "zerocopy-derive"] }
+signal-hook = "0.3"
+
+[profile.release]
+opt-level = 3
+lto = true
