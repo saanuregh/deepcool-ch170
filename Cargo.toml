@@ -7,9 +7,7 @@ edition = "2024"
 tracing = "0.1"
 tracing-subscriber = "0.3"
 anyhow = "1.0"
-winapi = { version = "0.3", features = [
-    "memoryapi",
-] }
+winapi = { version = "0.3", features = ["memoryapi"] }
 fixedstr = "0.5"
 hidapi = { version = "2.6", default-features = false, features = [
     "windows-native",
@@ -17,6 +15,10 @@ hidapi = { version = "2.6", default-features = false, features = [
 bincode = "2"
 zerocopy = { version = "0.8", features = ["derive", "zerocopy-derive"] }
 signal-hook = "0.3"
+windows = { version = "0.61", features = [
+    "Win32_System_Memory",
+    "Win32_System_Diagnostics_ToolHelp",
+] }
 
 [profile.release]
 opt-level = 3

@@ -1,12 +1,19 @@
 use anyhow;
 use fixedstr::zstr;
-use std::io;
-use std::os::windows::ffi::OsStrExt;
+use std::process::Command;
 use std::thread::sleep;
 use std::time::Duration;
-use std::{ffi::OsStr, iter::once};
 use tracing::{debug, error, info};
-use winapi::um::memoryapi::{FILE_MAP_READ, MapViewOfFile, OpenFileMappingW, UnmapViewOfFile};
+use windows::Win32::Foundation::CloseHandle;
+use windows::Win32::System::Diagnostics::ToolHelp::{
+    CreateToolhelp32Snapshot, PROCESSENTRY32, Process32First, Process32Next, TH32CS_SNAPPROCESS,
+};
+use windows::Win32::System::Memory::FILE_MAP_READ;
+use windows::Win32::System::Memory::MEMORY_MAPPED_VIEW_ADDRESS;
+use windows::Win32::System::Memory::MapViewOfFile;
+use windows::Win32::System::Memory::OpenFileMappingW;
+use windows::Win32::System::Memory::UnmapViewOfFile;
+use windows::core::w;
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -66,7 +73,7 @@ struct HWiNFOSharedMemory {
     polling_period: u32,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, PartialEq, Clone, Copy)]
 pub struct SensorReadings {
     pub polling_period: u32,
     pub cpu_temp: f64,
@@ -90,17 +97,18 @@ impl SensorReadings {
 }
 
 pub struct SensorReader<'a> {
-    shared_memory_view: *mut winapi::ctypes::c_void,
+    shared_memory_view: MEMORY_MAPPED_VIEW_ADDRESS,
     shared_memory_view_ptr: *const HWiNFOSharedMemory,
     info: &'a HWiNFOSharedMemory,
     pub sensors: Vec<HWiNFOSensorElement>,
     pub readings: SensorReadings,
+    no_change_counter: u32,
 }
 
 impl<'a> SensorReader<'a> {
     pub fn new() -> Result<SensorReader<'a>, anyhow::Error> {
         let shared_memory_view = get_hwinfo_shared_memory_view_with_retry()?;
-        let shared_memory_view_ptr = shared_memory_view as *const HWiNFOSharedMemory;
+        let shared_memory_view_ptr = shared_memory_view.Value as *const HWiNFOSharedMemory;
         let info = unsafe { &(*shared_memory_view_ptr) };
         let mut sensors_ptr =
             unsafe { shared_memory_view_ptr.add(1) as *const HWiNFOSensorElement };
@@ -117,15 +125,16 @@ impl<'a> SensorReader<'a> {
             info,
             sensors,
             readings: SensorReadings::new(),
+            no_change_counter: 0,
         })
     }
 
     pub fn update(&mut self) -> anyhow::Result<()> {
-        if self.shared_memory_view_ptr.is_null() {
+        if self.no_change_counter > 5 {
             error!("HWiNFO shared memory access lost, re-establishing");
             *self = Self::new()?;
         }
-        // TODO: Need to add logic for re-establishing when invalid data read. 
+        let old_data = self.readings;
         self.info = unsafe { &(*self.shared_memory_view_ptr) };
         self.readings.polling_period = self.info.polling_period;
         let mut reading_ptr = unsafe {
@@ -187,6 +196,13 @@ impl<'a> SensorReader<'a> {
 
             reading_ptr = unsafe { reading_ptr.add(1) };
         }
+
+        if old_data == self.readings {
+            self.no_change_counter += 1;
+        } else {
+            self.no_change_counter = 0;
+        }
+
         debug!("updated sensor readings");
         Ok(())
     }
@@ -199,35 +215,59 @@ impl<'a> Drop for SensorReader<'a> {
     }
 }
 
-fn get_hwinfo_shared_memory_view() -> anyhow::Result<*mut winapi::ctypes::c_void> {
+fn is_hwinfo_running() -> anyhow::Result<bool> {
+    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) }?;
+    let mut process_entry = PROCESSENTRY32::default();
+    process_entry.dwSize = std::mem::size_of::<PROCESSENTRY32>() as u32;
+    let mut found = false;
+
+    if unsafe { Process32First(snapshot, &mut process_entry) }.is_ok() {
+        loop {
+            let process_name =
+                unsafe { std::ffi::CStr::from_ptr(process_entry.szExeFile.as_ptr()) }
+                    .to_string_lossy();
+            if process_name == "HWiNFO64.EXE" {
+                found = true;
+                break;
+            }
+            if !unsafe { Process32Next(snapshot, &mut process_entry) }.is_ok() {
+                break;
+            }
+        }
+    }
+
+    unsafe { CloseHandle(snapshot) }?;
+    Ok(found)
+}
+
+fn start_hwinfo() -> anyhow::Result<()> {
+    Command::new("powershell")
+        .arg("-Command")
+        .arg(format!(
+            "Start-Process -FilePath '{}' -Verb RunAs",
+            r"C:\Program Files\HWiNFO64\HWiNFO64.EXE"
+        ))
+        .spawn()
+        .map_err(|e| anyhow::anyhow!("Failed to start HWiNFO with elevated privileges: {}", e))?;
+    sleep(Duration::from_secs(10));
+    Ok(())
+}
+
+fn get_hwinfo_shared_memory_view() -> anyhow::Result<MEMORY_MAPPED_VIEW_ADDRESS> {
+    if !is_hwinfo_running()? {
+        start_hwinfo()?;
+
+        anyhow::bail!("HWiNFO.exe is not running");
+    }
     let shared_memory_handle = unsafe {
-        OpenFileMappingW(
-            FILE_MAP_READ,
-            0,
-            OsStr::new("Global\\HWiNFO_SENS_SM2")
-                .encode_wide()
-                .chain(once(0))
-                .collect::<Vec<u16>>()
-                .as_ptr(),
-        )
-    };
-    if shared_memory_handle.is_null() {
-        return Err(anyhow::Error::new(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Failed to open shared memory object",
-        )));
-    }
+        let lpname = w!("Global\\HWiNFO_SENS_SM2");
+        OpenFileMappingW(FILE_MAP_READ.0, false, lpname)
+    }?;
     let shared_memory_view = unsafe { MapViewOfFile(shared_memory_handle, FILE_MAP_READ, 0, 0, 0) };
-    if shared_memory_view.is_null() {
-        return Err(anyhow::Error::new(io::Error::new(
-            io::ErrorKind::NotFound,
-            "Failed to map view of shared memory",
-        )));
-    }
     Ok(shared_memory_view)
 }
 
-fn get_hwinfo_shared_memory_view_with_retry() -> anyhow::Result<*mut winapi::ctypes::c_void> {
+fn get_hwinfo_shared_memory_view_with_retry() -> anyhow::Result<MEMORY_MAPPED_VIEW_ADDRESS> {
     let mut retries_left = 3;
     loop {
         match get_hwinfo_shared_memory_view() {

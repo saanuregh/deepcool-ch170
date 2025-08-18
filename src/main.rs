@@ -1,3 +1,4 @@
+#![windows_subsystem = "windows"]
 mod ch_170;
 mod sensor_reader;
 
