@@ -1,0 +1,13 @@
+[tools]
+rust = "1.92"
+
+[tasks.dev]
+run = "cargo run"
+env = { RUST_LOG = "debug" }
+
+[tasks.build]
+run = "cargo build --release"
+
+[tasks.bin_install]
+run = "copy .\\target\\release\\deepcool-ch170.exe C:\\bin\\"
+depends = "build"

@@ -1,7 +1,202 @@
-Updates Deepcool CH170 Digital's display with revolving modes using data from HWiNFO.
+# DeepCool CH170 Digital Display Controller
 
-## Requirement
-1. HWiNFO running in background as it uses its shared memory access for the sensor data.
+A Windows application that updates the DeepCool CH170 Digital display with real-time system monitoring data from HWiNFO. The display automatically cycles through different monitoring modes showing CPU and GPU statistics.
 
-## Based on
-1. https://github.com/Nortank12/deepcool-digital-linux
+## Features
+
+- **Real-time Monitoring**: Displays live system metrics on the CH170 Digital display
+- **Multiple Display Modes**: Automatically rotates between three display modes:
+  - CPU Frequency mode (CPU temp, power, usage, frequency, cooler RPM)
+  - GPU mode (GPU temp, power, usage, frequency)
+  - CPU Fan mode (CPU temp, power, usage, frequency, cooler RPM)
+- **HWiNFO Integration**: Reads sensor data directly from HWiNFO's shared memory
+- **Auto-reconnection**: Automatically handles device disconnections and reconnects
+- **Background Operation**: Runs silently in the background (no console window in release builds)
+- **Graceful Shutdown**: Responds to SIGTERM, SIGINT, and SIGBREAK signals
+
+## Requirements
+
+1. **HWiNFO64**: Must be running in the background with shared memory enabled
+   - Download from: https://www.hwinfo.com/
+   - Enable "Shared Memory Support" in HWiNFO settings
+2. **DeepCool CH170 Digital Display**: Must be connected via USB
+3. **Windows OS**: This application uses Windows-specific APIs
+
+## Installation
+
+### From Source
+
+1. Install [Rust](https://www.rust-lang.org/tools/install) (if not already installed)
+2. Clone this repository:
+   ```bash
+   git clone https://github.com/yourusername/deepcool-ch170.git
+   cd deepcool-ch170
+   ```
+3. Build the release version:
+   ```bash
+   cargo build --release
+   ```
+4. The executable will be located at `target\release\deepcool-ch170.exe`
+
+### Binary Release
+
+Download the latest pre-built binary from the [Releases](https://github.com/yourusername/deepcool-ch170/releases) page.
+
+## Usage
+
+1. Start HWiNFO64 with shared memory support enabled
+2. Ensure your DeepCool CH170 Digital display is connected via USB
+3. Run the executable:
+   ```bash
+   deepcool-ch170.exe
+   ```
+
+The application will:
+
+- Automatically detect and connect to HWiNFO's shared memory
+- Connect to the CH170 display device (VID: 0x363B, PID: 0x0013)
+- Begin updating the display with sensor data
+- Cycle through display modes every 5 refresh cycles (configurable in code)
+
+To stop the application, press `Ctrl+C` or send a termination signal.
+
+## Configuration
+
+### Display Mode Cycle Duration
+
+The time each mode is displayed is controlled by the `REFRESH_CYCLES_PER_MODE` constant in `src/main.rs`:
+
+```rust
+const REFRESH_CYCLES_PER_MODE: u32 = 5;
+```
+
+Actual duration = `REFRESH_CYCLES_PER_MODE × HWiNFO polling period`
+
+### Temperature Units
+
+Temperature units can be changed in `src/ch_170.rs`:
+
+```rust
+const TEMPERATURE_UNIT_CELSIUS: bool = false;  // Set to true for Celsius
+```
+
+### Sensor Mapping
+
+The application automatically maps HWiNFO sensors by reading the shared memory. You may need to adjust sensor names/labels in HWiNFO to match what the application expects, or modify the sensor reading logic in `src/sensor_reader.rs`.
+
+## Technical Details
+
+### Architecture
+
+- **Language**: Rust 2021 Edition
+- **HID Communication**: Uses `hidapi` for USB HID communication with the display
+- **Sensor Reading**: Reads from HWiNFO's shared memory using Windows APIs
+- **Logging**: Structured logging with `tracing` crate
+
+### Display Protocol
+
+The CH170 display uses a custom HID protocol:
+
+- Report ID: 16 (0x10)
+- Payload size: 64 bytes
+- Includes checksumming for data integrity
+- Supports temperature, power, usage, frequency, and fan speed metrics
+
+### Project Structure
+
+```
+deepcool-ch170/
+├── src/
+│   ├── main.rs           # Application entry point and main loop
+│   ├── ch_170.rs         # CH170 display communication and protocol
+│   ├── sensor_reader.rs  # HWiNFO shared memory reader
+│   └── helpers.rs        # Utility functions (retry logic, etc.)
+├── Cargo.toml            # Rust project configuration
+├── LICENSE               # MIT License
+└── README.md             # This file
+```
+
+### Dependencies
+
+- `hidapi` - USB HID device communication
+- `windows` - Windows API bindings
+- `zerocopy` - Zero-copy parsing and serialization
+- `tracing` - Structured logging
+- `anyhow` - Error handling
+- `signal-hook` - Signal handling for graceful shutdown
+
+## Troubleshooting
+
+### "Failed to open HID device"
+
+- Ensure the CH170 display is connected via USB
+- Check Device Manager for the device (should appear under "Human Interface Devices")
+- Try unplugging and replugging the device
+
+### "Failed to initialize sensor reader"
+
+- Make sure HWiNFO64 is running
+- Enable "Shared Memory Support" in HWiNFO settings (Sensors → Settings → Shared Memory Support)
+- Wait a few seconds after starting HWiNFO before running this application
+
+### Display shows incorrect values
+
+- Verify sensor names in HWiNFO match what the application expects
+- Check HWiNFO's sensor readings to ensure they're updating
+- Review application logs for sensor reading errors
+
+### No display updates
+
+- Check that HWiNFO is actively updating sensor readings
+- Ensure the polling period in HWiNFO is reasonable (recommended: 2000ms)
+- Look for errors in the application logs
+
+## Development
+
+### Running in Debug Mode
+
+Debug builds show a console window with logging output:
+
+```bash
+cargo run
+```
+
+### Running Tests
+
+```bash
+# Run unit tests
+cargo test
+
+# Run hardware tests (requires connected CH170 display)
+cargo test -- --ignored --nocapture
+```
+
+### Building for Release
+
+```bash
+cargo build --release
+```
+
+Release builds are optimized (LTO enabled) and run without a console window.
+
+## Based On
+
+This project is inspired by [deepcool-digital-linux](https://github.com/Nortank12/deepcool-digital-linux), adapted for Windows with HWiNFO integration.
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+## Author
+
+Saanu Reghunadh
+
+## Acknowledgments
+
+- [Nortank12](https://github.com/Nortank12) for the original Linux implementation
+- HWiNFO for providing shared memory access to sensor data
+- DeepCool for the CH170 Digital display hardware

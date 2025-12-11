@@ -1,41 +1,108 @@
-#![windows_subsystem = "windows"]
-mod ch_170;
-mod sensor_reader;
+// Hide console window in release builds, but show it in debug builds for logging
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use anyhow;
-use ch_170::*;
-use sensor_reader::*;
+mod ch_170;
+mod helpers;
+mod sensor_reader;
+mod sensor_readings;
+
+use anyhow::{Context, Result};
+use ch_170::CH170Display;
+use sensor_reader::SensorReader;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::sleep;
-use std::time::{Duration, Instant};
-use tracing::info;
+use std::time::Duration;
+use tracing::{error, info};
 
-fn main() -> anyhow::Result<()> {
+// Constants
+const REFRESH_CYCLES_PER_MODE: u32 = 5;
+
+fn main() -> Result<()> {
+    // Initialize logging
     tracing_subscriber::fmt::init();
 
+    info!("DeepCool CH170 Display Controller starting...");
+
+    // Setup graceful shutdown
+    let shutdown = setup_shutdown_handler()?;
+
+    // Initialize hardware connections
+    let mut sensor_reader = SensorReader::new().context("Failed to initialize sensor reader")?;
+    let mut display = CH170Display::new().context("Failed to initialize CH170 display")?;
+
+    info!("Hardware initialized successfully");
+
+    // Run main display update loop
+    run_display_loop(&mut sensor_reader, &mut display, &shutdown)?;
+
+    info!("DeepCool CH170 Display Controller stopped");
+    Ok(())
+}
+
+fn setup_shutdown_handler() -> Result<Arc<AtomicBool>> {
     let shutdown = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, shutdown.clone())?;
-    signal_hook::flag::register(signal_hook::consts::SIGINT, shutdown.clone())?;
-    signal_hook::flag::register(signal_hook::consts::SIGBREAK, shutdown.clone())?;
 
-    let mut sensor_reader = SensorReader::new()?;
-    let mut ch_170_display = CH170Display::new()?;
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, shutdown.clone())
+        .context("Failed to register SIGTERM handler")?;
+    signal_hook::flag::register(signal_hook::consts::SIGINT, shutdown.clone())
+        .context("Failed to register SIGINT handler")?;
+    signal_hook::flag::register(signal_hook::consts::SIGBREAK, shutdown.clone())
+        .context("Failed to register SIGBREAK handler")?;
 
-    let refreshes_till_switch = 5.0;
+    info!("Shutdown handlers registered");
+    Ok(shutdown)
+}
 
-    info!("starting display update loop");
+fn run_display_loop(
+    sensor_reader: &mut SensorReader,
+    display: &mut CH170Display,
+    shutdown: &Arc<AtomicBool>,
+) -> Result<()> {
+    info!("Starting display update loop");
+
     while !shutdown.load(Ordering::Relaxed) {
-        let refresh = Duration::from_millis(sensor_reader.readings.polling_period as u64);
-        let refresh_till = Instant::now() + refresh.mul_f64(refreshes_till_switch);
-        while !shutdown.load(Ordering::Relaxed) && Instant::now() < refresh_till {
-            sensor_reader.update()?;
-            ch_170_display.update(&sensor_reader.readings)?;
-            sleep(refresh);
+        if let Err(e) = run_mode_cycle(sensor_reader, display, shutdown) {
+            error!(?e, "Error in display cycle, attempting to recover");
+            sleep(Duration::from_secs(1));
+            continue;
         }
-        ch_170_display.switch_mode();
+
+        // Switch to next display mode
+        display.switch_mode();
     }
-    info!("stopping display update loop");
+
+    info!("Display update loop stopped");
+    Ok(())
+}
+
+fn run_mode_cycle(
+    sensor_reader: &mut SensorReader,
+    display: &mut CH170Display,
+    shutdown: &Arc<AtomicBool>,
+) -> Result<()> {
+    let mut cycles = 0;
+    while !shutdown.load(Ordering::Relaxed) && cycles < REFRESH_CYCLES_PER_MODE {
+        // Update sensor readings
+        sensor_reader
+            .update()
+            .context("Failed to update sensor readings")?;
+
+        // Update display with current readings
+        display
+            .update(sensor_reader.readings())
+            .context("Failed to update display")?;
+
+        cycles += 1;
+
+        // Sleep until next refresh
+        sleep(Duration::from_millis(sensor_reader.polling_period() as u64));
+
+        // Quick check for shutdown to be more responsive
+        if shutdown.load(Ordering::Relaxed) {
+            break;
+        }
+    }
 
     Ok(())
 }
