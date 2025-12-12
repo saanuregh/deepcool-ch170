@@ -5,6 +5,9 @@ rust = "1.92"
 run = "cargo run"
 env = { RUST_LOG = "debug" }
 
+[tasks.test]
+run = "cargo test -- --nocapture"
+
 [tasks.build]
 run = "cargo build --release"
 

@@ -517,7 +517,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // Run with: cargo test -- --ignored --nocapture
     fn test_read_sensor_values_from_hwinfo() {
         println!("\n=== Testing HWiNFO Sensor Reading ===\n");
 

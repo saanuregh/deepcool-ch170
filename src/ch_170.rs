@@ -241,7 +241,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // Run with: cargo test -- --ignored --nocapture
     fn test_display_with_dummy_values() {
         // This test connects to the actual CH170 display
         println!("\n=== Testing CH170 Display with Dummy Sensor Values ===\n");

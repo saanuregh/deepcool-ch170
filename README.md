@@ -11,8 +11,6 @@ A Windows application that updates the DeepCool CH170 Digital display with real-
   - CPU Fan mode (CPU temp, power, usage, frequency, cooler RPM)
 - **HWiNFO Integration**: Reads sensor data directly from HWiNFO's shared memory
 - **Auto-reconnection**: Automatically handles device disconnections and reconnects
-- **Background Operation**: Runs silently in the background (no console window in release builds)
-- **Graceful Shutdown**: Responds to SIGTERM, SIGINT, and SIGBREAK signals
 
 ## Requirements
 
@@ -26,21 +24,19 @@ A Windows application that updates the DeepCool CH170 Digital display with real-
 
 ### From Source
 
-1. Install [Rust](https://www.rust-lang.org/tools/install) (if not already installed)
+1. Install [Mise](https://mise.jdx.dev/getting-started.html) (if not already installed)
 2. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/deepcool-ch170.git
+   git clone https://github.com/saanuregh/deepcool-ch170.git
    cd deepcool-ch170
+   mise install
    ```
 3. Build the release version:
    ```bash
-   cargo build --release
+   mise run build
    ```
 4. The executable will be located at `target\release\deepcool-ch170.exe`
 
-### Binary Release
-
-Download the latest pre-built binary from the [Releases](https://github.com/yourusername/deepcool-ch170/releases) page.
 
 ## Usage
 
@@ -58,7 +54,7 @@ The application will:
 - Begin updating the display with sensor data
 - Cycle through display modes every 5 refresh cycles (configurable in code)
 
-To stop the application, press `Ctrl+C` or send a termination signal.
+To stop the application close in task manager.
 
 ## Configuration
 
@@ -88,7 +84,7 @@ The application automatically maps HWiNFO sensors by reading the shared memory. 
 
 ### Architecture
 
-- **Language**: Rust 2021 Edition
+- **Language**: Rust 2024 Edition
 - **HID Communication**: Uses `hidapi` for USB HID communication with the display
 - **Sensor Reading**: Reads from HWiNFO's shared memory using Windows APIs
 - **Logging**: Structured logging with `tracing` crate
@@ -158,45 +154,29 @@ deepcool-ch170/
 Debug builds show a console window with logging output:
 
 ```bash
-cargo run
+mise run dev
 ```
 
 ### Running Tests
 
 ```bash
-# Run unit tests
-cargo test
-
-# Run hardware tests (requires connected CH170 display)
-cargo test -- --ignored --nocapture
+mise run test
 ```
 
 ### Building for Release
 
 ```bash
-cargo build --release
+mise run build
 ```
 
 Release builds are optimized (LTO enabled) and run without a console window.
 
-## Based On
-
-This project is inspired by [deepcool-digital-linux](https://github.com/Nortank12/deepcool-digital-linux), adapted for Windows with HWiNFO integration.
 
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## Author
-
-Saanu Reghunadh
 
 ## Acknowledgments
 
 - [Nortank12](https://github.com/Nortank12) for the original Linux implementation
-- HWiNFO for providing shared memory access to sensor data
-- DeepCool for the CH170 Digital display hardware
