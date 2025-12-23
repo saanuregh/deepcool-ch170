@@ -1,6 +1,5 @@
-#[derive(Debug, PartialEq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub struct SensorReadings {
-    pub polling_period: u32,
     pub cpu_temp: f64,
     pub cpu_power: f64,
     pub cpu_usage: f64,
@@ -10,4 +9,7 @@ pub struct SensorReadings {
     pub gpu_power: f64,
     pub gpu_usage: f64,
     pub gpu_freq: f64,
+    pub elapsed_time_ms: u64,
+    pub polling_period: u32,
+    pub temperature_unit_celsius: bool,
 }

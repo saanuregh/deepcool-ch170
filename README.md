@@ -1,6 +1,6 @@
 # DeepCool CH170 Digital Display Controller
 
-A Windows application that updates the DeepCool CH170 Digital display with real-time system monitoring data from HWiNFO. The display automatically cycles through different monitoring modes showing CPU and GPU statistics.
+A Windows application that updates the DeepCool CH170 Digital display with real-time system monitoring data from [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor). The display automatically cycles through different monitoring modes showing CPU and GPU statistics.
 
 ## Features
 
@@ -9,14 +9,13 @@ A Windows application that updates the DeepCool CH170 Digital display with real-
   - CPU Frequency mode (CPU temp, power, usage, frequency, cooler RPM)
   - GPU mode (GPU temp, power, usage, frequency)
   - CPU Fan mode (CPU temp, power, usage, frequency, cooler RPM)
-- **HWiNFO Integration**: Reads sensor data directly from HWiNFO's shared memory
+- **LibreHardwareMonitor Integration**: Reads sensor data directly from LibreHardwareMonitor Remote Web Server
 - **Auto-reconnection**: Automatically handles device disconnections and reconnects
 
 ## Requirements
 
-1. **HWiNFO64**: Must be running in the background with shared memory enabled
-   - Download from: https://www.hwinfo.com/
-   - Enable "Shared Memory Support" in HWiNFO settings
+1. **LibreHardwareMonitor**: Must be running in the background with Remote Web Server enabled
+   - Currently only supports pre release LibreHardwareMonitor
 2. **DeepCool CH170 Digital Display**: Must be connected via USB
 3. **Windows OS**: This application uses Windows-specific APIs
 
@@ -37,10 +36,9 @@ A Windows application that updates the DeepCool CH170 Digital display with real-
    ```
 4. The executable will be located at `target\release\deepcool-ch170.exe`
 
-
 ## Usage
 
-1. Start HWiNFO64 with shared memory support enabled
+1. Start LibreHardwareMonitor with Remote Web Server enabled
 2. Ensure your DeepCool CH170 Digital display is connected via USB
 3. Run the executable:
    ```bash
@@ -49,7 +47,6 @@ A Windows application that updates the DeepCool CH170 Digital display with real-
 
 The application will:
 
-- Automatically detect and connect to HWiNFO's shared memory
 - Connect to the CH170 display device (VID: 0x363B, PID: 0x0013)
 - Begin updating the display with sensor data
 - Cycle through display modes every 5 refresh cycles (configurable in code)
@@ -171,11 +168,9 @@ mise run build
 
 Release builds are optimized (LTO enabled) and run without a console window.
 
-
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
 
 ## Acknowledgments
 

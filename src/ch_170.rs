@@ -18,8 +18,6 @@ const DISPLAY_PADDING_SIZE: usize = 22;
 const MAX_CONNECTION_RETRIES: u32 = 3;
 const RETRY_DELAY_SECS: u64 = 5;
 
-const TEMPERATURE_UNIT_CELSIUS: bool = false;
-
 // Display Device
 pub struct CH170Display {
     device: HidDevice,
@@ -148,6 +146,7 @@ impl DisplayData {
         self.cpu_utilization = readings.cpu_usage.round() as u8;
         self.cpu_frequency = (readings.cpu_freq.round() as u16).into();
         self.cpu_fan_speed = (readings.cpu_cooler_rpm.round() as u16).into();
+        self.all_temperature_unit = readings.temperature_unit_celsius; // Celsius
     }
 
     fn set_gpu_data(&mut self, readings: &SensorReadings) {
@@ -155,6 +154,7 @@ impl DisplayData {
         self.gpu_power = (readings.gpu_power.round() as u16).into();
         self.gpu_utilization = readings.gpu_usage.round() as u8;
         self.gpu_frequency = (readings.gpu_freq.round() as u16).into();
+        self.all_temperature_unit = readings.temperature_unit_celsius; // Celsius
     }
 }
 
@@ -173,7 +173,6 @@ impl DisplayPayload {
         let mut payload = Self::default();
         payload.report_id = DISPLAY_REPORT_ID;
         payload.data.fixed_header = DISPLAY_HEADER;
-        payload.data.all_temperature_unit = TEMPERATURE_UNIT_CELSIUS;
         payload.terminator = DISPLAY_TERMINATOR;
         payload
     }
@@ -260,7 +259,6 @@ mod tests {
 
         // Create dummy sensor readings
         let dummy_readings = SensorReadings {
-            polling_period: 2000,
             cpu_temp: 75.5,
             cpu_power: 120.0,
             cpu_usage: 65.0,
@@ -270,6 +268,9 @@ mod tests {
             gpu_power: 250.0,
             gpu_usage: 80.0,
             gpu_freq: 2400.0,
+            elapsed_time_ms: 100,
+            polling_period: 2000,
+            temperature_unit_celsius: true,
         };
 
         println!("Dummy sensor values:");

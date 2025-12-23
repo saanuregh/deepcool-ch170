@@ -62,12 +62,7 @@ fn run_display_loop(
     info!("Starting display update loop");
 
     while !shutdown.load(Ordering::Relaxed) {
-        if let Err(e) = run_mode_cycle(sensor_reader, display, shutdown) {
-            error!(?e, "Error in display cycle, attempting to recover");
-            sleep(Duration::from_secs(1));
-            continue;
-        }
-
+        run_mode_cycle(sensor_reader, display, shutdown);
         // Switch to next display mode
         display.switch_mode();
     }
@@ -80,18 +75,18 @@ fn run_mode_cycle(
     sensor_reader: &mut SensorReader,
     display: &mut CH170Display,
     shutdown: &Arc<AtomicBool>,
-) -> Result<()> {
+) {
     let mut cycles = 0;
     while !shutdown.load(Ordering::Relaxed) && cycles < REFRESH_CYCLES_PER_MODE {
         // Update sensor readings
-        sensor_reader
-            .update()
-            .context("Failed to update sensor readings")?;
+        if let Err(err) = sensor_reader.update() {
+            error!(?err, "Failed to update sensor readings");
+        }
 
         // Update display with current readings
-        display
-            .update(sensor_reader.readings())
-            .context("Failed to update display")?;
+        if let Err(err) = display.update(sensor_reader.readings()) {
+            error!(?err, "Failed to update display");
+        }
 
         cycles += 1;
 
@@ -103,6 +98,4 @@ fn run_mode_cycle(
             break;
         }
     }
-
-    Ok(())
 }
