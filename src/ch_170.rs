@@ -112,7 +112,7 @@ struct DisplayData {
 
     // CPU Data
     cpu_power: byteorder::U16<BE>,
-    all_temperature_unit: bool,
+    all_temperature_unit: u8,
     cpu_temperature: byteorder::F32<BE>,
     cpu_utilization: u8,
     cpu_frequency: byteorder::U16<BE>,
@@ -146,7 +146,7 @@ impl DisplayData {
         self.cpu_utilization = readings.cpu_usage.round() as u8;
         self.cpu_frequency = (readings.cpu_freq.round() as u16).into();
         self.cpu_fan_speed = (readings.cpu_cooler_rpm.round() as u16).into();
-        self.all_temperature_unit = readings.temperature_unit_celsius; // Celsius
+        self.all_temperature_unit = readings.all_temperature_unit as u8;
     }
 
     fn set_gpu_data(&mut self, readings: &SensorReadings) {
@@ -154,7 +154,7 @@ impl DisplayData {
         self.gpu_power = (readings.gpu_power.round() as u16).into();
         self.gpu_utilization = readings.gpu_usage.round() as u8;
         self.gpu_frequency = (readings.gpu_freq.round() as u16).into();
-        self.all_temperature_unit = readings.temperature_unit_celsius; // Celsius
+        self.all_temperature_unit = readings.all_temperature_unit as u8;
     }
 }
 
@@ -238,6 +238,7 @@ fn open_hid_device() -> Result<HidDevice> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sensor_readings::TemperatureUnit;
 
     #[test]
     fn test_display_with_dummy_values() {
@@ -270,7 +271,7 @@ mod tests {
             gpu_freq: 2400.0,
             elapsed_time_ms: 100,
             polling_period: 2000,
-            temperature_unit_celsius: true,
+            all_temperature_unit: TemperatureUnit::Celsius,
         };
 
         println!("Dummy sensor values:");

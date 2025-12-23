@@ -1,6 +1,6 @@
-use crate::sensor_readings::SensorReadings;
+use crate::sensor_readings::{SensorReadings, TemperatureUnit};
 use anyhow::{Context, Result};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use std::time::Duration;
 use tracing::debug;
 
@@ -8,7 +8,6 @@ use tracing::debug;
 const LHM_API_URL: &str = "http://127.0.0.1:8085/data.json";
 const TIMEOUT_MS: u64 = 100;
 const POLLING_PERIOD_MS: u32 = 1000;
-const TEMPERATURE_UNIT_CELSIUS: bool = true;
 
 // Sensor Identifiers
 const CPU_IDENTIFIER: &str = "/amdcpu/0";
@@ -50,7 +49,7 @@ impl SensorReader {
                 gpu_freq: 0.0,
                 elapsed_time_ms: 0,
                 polling_period: POLLING_PERIOD_MS,
-                temperature_unit_celsius: TEMPERATURE_UNIT_CELSIUS,
+                all_temperature_unit: TemperatureUnit::Celsius,
             },
         })
     }
@@ -71,7 +70,9 @@ impl SensorReader {
             .get(0)
             .context("No computer data found in LHM response")?;
         for hardware in &computer.children {
-            let hardware_id = hardware.hardware_id.as_deref().unwrap_or_default();
+            let Some(hardware_id) = hardware.hardware_id.as_deref() else {
+                continue;
+            };
             match hardware_id {
                 MOTHERBOARD_IDENTIFIER => {
                     let Some(mb) = hardware.children.get(0) else {
@@ -83,8 +84,8 @@ impl SensorReader {
                     for sensor in mb_fans.iter() {
                         match sensor.sensor_id.as_deref() {
                             Some(CPU_FAN_IDENTIFIER) => {
-                                if let Some(val) = parse_rpm(&sensor.value) {
-                                    sensor_reading.cpu_cooler_rpm = val;
+                                if let Some(val) = sensor.value.as_rpm() {
+                                    sensor_reading.cpu_cooler_rpm = val
                                 }
                             }
                             _ => {}
@@ -96,25 +97,23 @@ impl SensorReader {
                     for sensor in sensor_iterator {
                         match sensor.sensor_id.as_deref() {
                             Some(CPU_TEMPERATURE_NAME) => {
-                                if let Some(val) = parse_temperature(
-                                    &sensor.value,
-                                    sensor_reading.temperature_unit_celsius,
-                                ) {
+                                if let Some((val, unit)) = sensor.value.as_temperature() {
                                     sensor_reading.cpu_temp = val;
+                                    sensor_reading.all_temperature_unit = unit;
                                 }
                             }
                             Some(CPU_FREQUENCY_IDENTIFIER) => {
-                                if let Some(val) = parse_frequency(&sensor.value) {
+                                if let Some(val) = sensor.value.as_frequency() {
                                     sensor_reading.cpu_freq = val;
                                 }
                             }
                             Some(CPU_POWER_IDENTIFIER) => {
-                                if let Some(val) = parse_power(&sensor.value) {
+                                if let Some(val) = sensor.value.as_power() {
                                     sensor_reading.cpu_power = val;
                                 }
                             }
                             Some(CPU_USAGE_IDENTIFIER) => {
-                                if let Some(val) = parse_usage(&sensor.value) {
+                                if let Some(val) = sensor.value.as_usage() {
                                     sensor_reading.cpu_usage = val;
                                 }
                             }
@@ -127,25 +126,23 @@ impl SensorReader {
                     for sensor in sensor_iterator {
                         match sensor.sensor_id.as_deref() {
                             Some(GPU_TEMPERATURE_NAME) => {
-                                if let Some(val) = parse_temperature(
-                                    &sensor.value,
-                                    sensor_reading.temperature_unit_celsius,
-                                ) {
+                                if let Some((val, unit)) = sensor.value.as_temperature() {
                                     sensor_reading.gpu_temp = val;
+                                    sensor_reading.all_temperature_unit = unit;
                                 }
                             }
                             Some(GPU_FREQUENCY_IDENTIFIER) => {
-                                if let Some(val) = parse_frequency(&sensor.value) {
+                                if let Some(val) = sensor.value.as_frequency() {
                                     sensor_reading.gpu_freq = val;
                                 }
                             }
                             Some(GPU_POWER_IDENTIFIER) => {
-                                if let Some(val) = parse_power(&sensor.value) {
+                                if let Some(val) = sensor.value.as_power() {
                                     sensor_reading.gpu_power = val;
                                 }
                             }
                             Some(GPU_USAGE_IDENTIFIER) => {
-                                if let Some(val) = parse_usage(&sensor.value) {
+                                if let Some(val) = sensor.value.as_usage() {
                                     sensor_reading.gpu_usage = val;
                                 }
                             }
@@ -185,71 +182,122 @@ impl SensorReader {
     }
 }
 
-fn parse_temperature(value: &str, is_celsius: bool) -> Option<f64> {
-    let trim = if is_celsius { " °C" } else { " °F" };
-    value.trim_end_matches(trim).parse::<f64>().ok()
-}
-
-fn parse_power(value: &str) -> Option<f64> {
-    value.trim_end_matches(" W").parse::<f64>().ok()
-}
-
-fn parse_usage(value: &str) -> Option<f64> {
-    value.trim_end_matches(" %").parse::<f64>().ok()
-}
-
-fn parse_frequency(value: &str) -> Option<f64> {
-    value.trim_end_matches(" MHz").parse::<f64>().ok()
-}
-
-fn parse_rpm(value: &str) -> Option<f64> {
-    value.trim_end_matches(" RPM").parse::<f64>().ok()
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Deserialize)]
 struct LHMData {
-    id: i64,
-    #[serde(rename = "Text")]
-    text: String,
-    #[serde(rename = "Min")]
-    min: String,
-    #[serde(rename = "Value")]
-    value: String,
-    #[serde(rename = "Max")]
-    max: String,
-    #[serde(rename = "ImageURL")]
-    image_url: String,
     #[serde(rename = "Children")]
     children: Vec<LHMDataChildren>,
 }
 
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug)]
+enum LHMDataValue {
+    Temperature(f64, TemperatureUnit),
+    Power(f64),
+    Usage(f64),
+    Frequency(f64),
+    Rpm(f64),
+    Unknown,
+}
+
+impl LHMDataValue {
+    fn as_temperature(&self) -> Option<(f64, TemperatureUnit)> {
+        if let LHMDataValue::Temperature(val, unit) = self {
+            Some((*val, *unit))
+        } else {
+            None
+        }
+    }
+
+    fn as_power(&self) -> Option<f64> {
+        if let LHMDataValue::Power(val) = self {
+            Some(*val)
+        } else {
+            None
+        }
+    }
+    fn as_usage(&self) -> Option<f64> {
+        if let LHMDataValue::Usage(val) = self {
+            Some(*val)
+        } else {
+            None
+        }
+    }
+    fn as_frequency(&self) -> Option<f64> {
+        if let LHMDataValue::Frequency(val) = self {
+            Some(*val)
+        } else {
+            None
+        }
+    }
+    fn as_rpm(&self) -> Option<f64> {
+        if let LHMDataValue::Rpm(val) = self {
+            Some(*val)
+        } else {
+            None
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for LHMDataValue {
+    fn deserialize<D>(deserializer: D) -> std::result::Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct LHMDataValueVisitor;
+        impl<'de> serde::de::Visitor<'de> for LHMDataValueVisitor {
+            type Value = LHMDataValue;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("a string representing a sensor value")
+            }
+
+            fn visit_str<E>(self, v: &str) -> std::result::Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                let Some((val, unit)) = v.split_once(' ') else {
+                    return Ok(LHMDataValue::Unknown);
+                };
+                match unit {
+                    "°C" => val
+                        .parse::<f64>()
+                        .map(|v| LHMDataValue::Temperature(v, TemperatureUnit::Celsius))
+                        .map_err(|_| E::custom(format!("Invalid temperature value: {}", v))),
+                    "°F" => val
+                        .parse::<f64>()
+                        .map(|v| LHMDataValue::Temperature(v, TemperatureUnit::Fahrenheit))
+                        .map_err(|_| E::custom(format!("Invalid temperature value: {}", v))),
+                    "W" => val
+                        .parse::<f64>()
+                        .map(|v| LHMDataValue::Power(v))
+                        .map_err(|_| E::custom(format!("Invalid power value: {}", v))),
+                    "%" => val
+                        .parse::<f64>()
+                        .map(|v| LHMDataValue::Usage(v))
+                        .map_err(|_| E::custom(format!("Invalid usage value: {}", v))),
+                    "MHz" => val
+                        .parse::<f64>()
+                        .map(|v| LHMDataValue::Frequency(v))
+                        .map_err(|_| E::custom(format!("Invalid frequency value: {}", v))),
+                    "RPM" => val
+                        .parse::<f64>()
+                        .map(|v| LHMDataValue::Rpm(v))
+                        .map_err(|_| E::custom(format!("Invalid RPM value: {}", v))),
+                    _ => Ok(LHMDataValue::Unknown),
+                }
+            }
+        }
+        deserializer.deserialize_str(LHMDataValueVisitor)
+    }
+}
+
+#[derive(Debug, Deserialize)]
 struct LHMDataChildren {
-    id: i64,
-    #[serde(rename = "Text")]
-    text: String,
-    #[serde(rename = "Min")]
-    min: String,
     #[serde(rename = "Value")]
-    value: String,
-    #[serde(rename = "Max")]
-    max: String,
+    value: LHMDataValue,
     #[serde(rename = "HardwareId")]
     hardware_id: Option<String>,
     #[serde(rename = "SensorId")]
     sensor_id: Option<String>,
-    #[serde(rename = "Type")]
-    type_field: Option<String>,
-    #[serde(rename = "RawMin")]
-    raw_min: Option<String>,
-    #[serde(rename = "RawValue")]
-    raw_value: Option<String>,
-    #[serde(rename = "RawMax")]
-    raw_max: Option<String>,
-    #[serde(rename = "ImageURL")]
-    image_url: String,
     #[serde(rename = "Children")]
     children: Vec<LHMDataChildren>,
 }
@@ -264,11 +312,7 @@ mod tests {
         reader.update().expect("Failed to read sensors");
 
         let readings = reader.readings();
-        let temp_unit = if readings.temperature_unit_celsius {
-            "°C"
-        } else {
-            "°F"
-        };
+        let temp_unit = format!("°{}", readings.all_temperature_unit.to_str());
         println!("Polling Period: {}ms", readings.polling_period);
         println!("Elapsesd: {}ms", readings.elapsed_time_ms);
         println!(

@@ -11,5 +11,22 @@ pub struct SensorReadings {
     pub gpu_freq: f64,
     pub elapsed_time_ms: u64,
     pub polling_period: u32,
-    pub temperature_unit_celsius: bool,
+    pub all_temperature_unit: TemperatureUnit,
+}
+#[derive(Debug, PartialEq, Clone, Copy)]
+#[repr(u8)]
+#[allow(dead_code)]
+pub enum TemperatureUnit {
+    Celsius = 0,
+    Fahrenheit = 1,
+}
+
+impl TemperatureUnit {
+    #[allow(dead_code)]
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            TemperatureUnit::Celsius => "C",
+            TemperatureUnit::Fahrenheit => "F",
+        }
+    }
 }
