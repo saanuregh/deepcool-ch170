@@ -1,177 +1,75 @@
-# DeepCool CH170 Digital Display Controller
+# DeepCool CH170 Display Controller
 
-A Windows application that updates the DeepCool CH170 Digital display with real-time system monitoring data from [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor). The display automatically cycles through different monitoring modes showing CPU and GPU statistics.
+Drives the DeepCool CH170 Digital display with live CPU/GPU stats on Windows,
+reading sensors directly from the hardware. It cycles through CPU-frequency, GPU,
+and CPU-fan views.
 
-## Features
-
-- **Real-time Monitoring**: Displays live system metrics on the CH170 Digital display
-- **Multiple Display Modes**: Automatically rotates between three display modes:
-  - CPU Frequency mode (CPU temp, power, usage, frequency, cooler RPM)
-  - GPU mode (GPU temp, power, usage, frequency)
-  - CPU Fan mode (CPU temp, power, usage, frequency, cooler RPM)
-- **LibreHardwareMonitor Integration**: Reads sensor data directly from LibreHardwareMonitor Remote Web Server
-- **Auto-reconnection**: Automatically handles device disconnections and reconnects
+> **Hardware-specific.** The CPU and fan register maps are written for an
+> **AMD Zen CPU** + **Nuvoton NCT6701D** SuperIO chip + **NVIDIA GPU**. Other
+> hardware needs the maps in [`src/sensors/`](src/sensors/) adapted (the GPU path
+> is portable across NVIDIA cards).
 
 ## Requirements
 
-1. **LibreHardwareMonitor**: Must be running in the background with Remote Web Server enabled
-   - Currently only supports pre release LibreHardwareMonitor
-2. **DeepCool CH170 Digital Display**: Must be connected via USB
-3. **Windows OS**: This application uses Windows-specific APIs
+- Windows, with the target hardware above.
+- [PawnIO](https://pawnio.eu) installed (`winget install namazso.PawnIO`) — the
+  signed kernel driver used for low-level CPU/fan access.
+- **Administrator.** PawnIO only grants access to elevated processes; the app
+  embeds a manifest, so Windows prompts for UAC on launch.
+- NVIDIA driver (provides `nvml.dll`); if absent, GPU values read as zero.
 
-## Installation
+## Build & install
 
-### From Source
-
-1. Install [Mise](https://mise.jdx.dev/getting-started.html) (if not already installed)
-2. Clone this repository:
-   ```bash
-   git clone https://github.com/saanuregh/deepcool-ch170.git
-   cd deepcool-ch170
-   mise install
-   ```
-3. Build the release version:
-   ```bash
-   mise run build
-   ```
-4. The executable will be located at `target\release\deepcool-ch170.exe`
-
-## Usage
-
-1. Start LibreHardwareMonitor with Remote Web Server enabled
-2. Ensure your DeepCool CH170 Digital display is connected via USB
-3. Run the executable:
-   ```bash
-   deepcool-ch170.exe
-   ```
-
-The application will:
-
-- Connect to the CH170 display device (VID: 0x363B, PID: 0x0013)
-- Begin updating the display with sensor data
-- Cycle through display modes every 5 refresh cycles (configurable in code)
-
-To stop the application close in task manager.
-
-## Configuration
-
-### Display Mode Cycle Duration
-
-The time each mode is displayed is controlled by the `REFRESH_CYCLES_PER_MODE` constant in `src/main.rs`:
-
-```rust
-const REFRESH_CYCLES_PER_MODE: u32 = 5;
-```
-
-Actual duration = `REFRESH_CYCLES_PER_MODE × HWiNFO polling period`
-
-### Temperature Units
-
-Temperature units can be changed in `src/ch_170.rs`:
-
-```rust
-const TEMPERATURE_UNIT_CELSIUS: bool = false;  // Set to true for Celsius
-```
-
-### Sensor Mapping
-
-The application automatically maps HWiNFO sensors by reading the shared memory. You may need to adjust sensor names/labels in HWiNFO to match what the application expects, or modify the sensor reading logic in `src/sensor_reader.rs`.
-
-## Technical Details
-
-### Architecture
-
-- **Language**: Rust 2024 Edition
-- **HID Communication**: Uses `hidapi` for USB HID communication with the display
-- **Sensor Reading**: Reads from HWiNFO's shared memory using Windows APIs
-- **Logging**: Structured logging with `tracing` crate
-
-### Display Protocol
-
-The CH170 display uses a custom HID protocol:
-
-- Report ID: 16 (0x10)
-- Payload size: 64 bytes
-- Includes checksumming for data integrity
-- Supports temperature, power, usage, frequency, and fan speed metrics
-
-### Project Structure
-
-```
-deepcool-ch170/
-├── src/
-│   ├── main.rs           # Application entry point and main loop
-│   ├── ch_170.rs         # CH170 display communication and protocol
-│   ├── sensor_reader.rs  # HWiNFO shared memory reader
-│   └── helpers.rs        # Utility functions (retry logic, etc.)
-├── Cargo.toml            # Rust project configuration
-├── LICENSE               # MIT License
-└── README.md             # This file
-```
-
-### Dependencies
-
-- `hidapi` - USB HID device communication
-- `windows` - Windows API bindings
-- `zerocopy` - Zero-copy parsing and serialization
-- `tracing` - Structured logging
-- `anyhow` - Error handling
-- `signal-hook` - Signal handling for graceful shutdown
-
-## Troubleshooting
-
-### "Failed to open HID device"
-
-- Ensure the CH170 display is connected via USB
-- Check Device Manager for the device (should appear under "Human Interface Devices")
-- Try unplugging and replugging the device
-
-### "Failed to initialize sensor reader"
-
-- Make sure HWiNFO64 is running
-- Enable "Shared Memory Support" in HWiNFO settings (Sensors → Settings → Shared Memory Support)
-- Wait a few seconds after starting HWiNFO before running this application
-
-### Display shows incorrect values
-
-- Verify sensor names in HWiNFO match what the application expects
-- Check HWiNFO's sensor readings to ensure they're updating
-- Review application logs for sensor reading errors
-
-### No display updates
-
-- Check that HWiNFO is actively updating sensor readings
-- Ensure the polling period in HWiNFO is reasonable (recommended: 2000ms)
-- Look for errors in the application logs
-
-## Development
-
-### Running in Debug Mode
-
-Debug builds show a console window with logging output:
+Uses [mise](https://mise.jdx.dev):
 
 ```bash
-mise run dev
+mise install        # toolchain
+mise run build      # -> target\release\deepcool-ch170.exe
+mise run install    # build, copy to C:\bin, register a logon autostart task (elevates)
+mise run uninstall  # remove the autostart task
 ```
 
-### Running Tests
+`mise tasks` lists the rest (`dev`, `test`, `check`).
+
+## Run
+
+Launch the executable and accept the UAC prompt. Subcommands (also run elevated):
 
 ```bash
-mise run test
+deepcool-ch170.exe --install | --uninstall | --status  # logon autostart task
+deepcool-ch170.exe --dump-sensors                       # print readings, no display
 ```
 
-### Building for Release
+Autostart uses a Task Scheduler "at logon" task with highest privileges, so it
+starts silently at logon — the Startup folder can't launch an elevated app cleanly.
 
-```bash
-mise run build
-```
+On shutdown, logoff or Ctrl+C the display loop stops and closes the HID device and
+the PawnIO handles before the OS tears the session down, so Windows never has to
+force-kill it. A hidden top-level window answers `WM_QUERYENDSESSION` immediately —
+without it the process has neither a window nor a console to be asked through, and
+gets terminated mid-USB-write.
 
-Release builds are optimized (LTO enabled) and run without a console window.
+## How it reads sensors
+
+| Metric | Source |
+| --- | --- |
+| CPU temp / package power / effective clock, fan RPM | [PawnIO](https://pawnio.eu) (MSR + SMN reads, SuperIO port I/O) |
+| CPU load | Win32 `GetSystemTimes` |
+| GPU temp / power / usage / clock | NVIDIA NVML |
+
+The register/decoding logic mirrors
+[LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor).
+The signed PawnIO modules are vendored under
+[`resources/pawnio/`](resources/pawnio/) and embedded at build time.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT — see [LICENSE](LICENSE). Vendored PawnIO modules are LGPL-2.1
+(`resources/pawnio/COPYING`), from
+[namazso/PawnIO.Modules](https://github.com/namazso/PawnIO.Modules).
 
 ## Acknowledgments
 
-- [Nortank12](https://github.com/Nortank12) for the original Linux implementation
+- [Nortank12](https://github.com/Nortank12) — original Linux implementation
+- [LibreHardwareMonitor](https://github.com/LibreHardwareMonitor/LibreHardwareMonitor) — sensor register logic
+- [namazso](https://github.com/namazso) — [PawnIO](https://github.com/namazso/PawnIO) + modules

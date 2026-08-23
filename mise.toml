@@ -1,16 +1,28 @@
 [tools]
-rust = "1.92"
+rust = "1.97"
 
 [tasks.dev]
+description = "Run a debug build with verbose logging (run from an elevated shell for hardware access)"
 run = "cargo run"
 env = { RUST_LOG = "debug" }
 
 [tasks.test]
+description = "Run tests with output shown (the display test needs the CH170 connected)"
 run = "cargo test -- --nocapture"
 
+[tasks.check]
+description = "Formatting and lint checks (rustfmt + clippy, warnings are errors)"
+run = "cargo fmt --check && cargo clippy --all-targets -- -D warnings"
+
 [tasks.build]
+description = "Build the optimized release binary (with elevation manifest)"
 run = "cargo build --release"
 
-[tasks.bin_install]
-run = "copy .\\target\\release\\deepcool-ch170.exe C:\\bin\\"
+[tasks.install]
+description = "Build, install to C:\\bin, and register the logon autostart task (elevates)"
+run = 'pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\install.ps1'
 depends = "build"
+
+[tasks.uninstall]
+description = "Remove the logon autostart task (elevates)"
+run = 'pwsh -NoProfile -ExecutionPolicy Bypass -File scripts\uninstall.ps1'
